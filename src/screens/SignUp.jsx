@@ -1,295 +1,231 @@
-
-import React, {useState} from 'react';
+import React, { useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import AuthShell, { AuthCard, ScreenHeader } from '../components/AuthShell';
+import { AnimatedField } from '../components/Field';
+import { PrimaryButton, TextButton } from '../components/Buttons';
+import { AnimatedIn } from '../components/Motion';
+import { Notice } from '../components/Feedback';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  Dimensions,
-  Alert,
-} from 'react-native';
+  ArrowRightIcon,
+  IdCardIcon,
+  LockIcon,
+  MailIcon,
+  PhoneIcon,
+  PinIcon,
+  UserIcon,
+} from '../components/Icons';
+import {
+  firstNameOf,
+  formatCnic,
+  formatPhone,
+  validateAddress,
+  validateCnic,
+  validateConfirmPassword,
+  validateEmail,
+  validateFullName,
+  validatePassword,
+  validatePhone,
+} from '../utils/validation';
+import { colors, font, spacing } from '../theme/theme';
 
-const {width} = Dimensions.get('window');
+const INITIAL_VALUES = {
+  fullName: '',
+  phone: '',
+  cnic: '',
+  address: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+};
 
-const SignUp = ({onLogin}) => {
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+const SignUp = ({ onLogin, onNext }) => {
+  const [values, setValues] = useState(INITIAL_VALUES);
+  const [errors, setErrors] = useState({});
+  const [notice, setNotice] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSignUp = () => {
-    if (!fullName || !email || !password || !confirmPassword) {
-      Alert.alert('Missing Fields', 'Please fill all fields.');
+  const setValue = (field, value) => {
+    setValues(prev => ({ ...prev, [field]: value }));
+    setNotice(null);
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: undefined }));
+    }
+  };
+
+  const runValidation = () => {
+    const nextErrors = {
+      fullName: validateFullName(values.fullName),
+      phone: validatePhone(values.phone),
+      cnic: validateCnic(values.cnic),
+      address: validateAddress(values.address),
+      email: validateEmail(values.email),
+      password: validatePassword(values.password),
+      confirmPassword: validateConfirmPassword(values.confirmPassword, values.password),
+    };
+    setErrors(nextErrors);
+    return nextErrors;
+  };
+
+  const handleNext = () => {
+    const nextErrors = runValidation();
+    const failing = Object.keys(nextErrors).filter(key => Boolean(nextErrors[key]));
+
+    if (failing.length) {
+      setNotice({
+        tone: 'error',
+        title: `${failing.length} field${failing.length > 1 ? 's need' : ' needs'} attention`,
+        message: nextErrors[failing[0]],
+      });
       return;
     }
 
-    if (password !== confirmPassword) {
-      Alert.alert('Password Error', 'Passwords do not match.');
-      return;
-    }
-
-    Alert.alert('Success', 'Account created successfully!');
+    setLoading(true);
+    setNotice(null);
+    // Form completion only — account creation requires an auth backend.
+    setTimeout(() => {
+      setLoading(false);
+      onNext &&
+        onNext({
+          firstName: firstNameOf(values.fullName),
+          email: values.email.trim(),
+        });
+    }, 900);
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        
-        <ScrollView
-          contentContainerStyle={styles.scrollContainer}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
-          
-          <View style={styles.card}>
+    <AuthShell
+      header={
+        <ScreenHeader
+          title="Create Your NexaLiving Account"
+          subtitle="Join your community and experience smarter living."
+          delay={60}
+        />
+      }>
+      <AuthCard delay={160}>
+        <AnimatedField
+          label="Full Name"
+          placeholder="e.g. Waleed Ahmed"
+          value={values.fullName}
+          onChangeText={text => setValue('fullName', text)}
+          icon={<UserIcon size={18} color={colors.primary} />}
+          autoCapitalize="words"
+          autoComplete="name"
+          error={errors.fullName}
+        />
 
-            {/* Header */}
-            <View style={styles.header}>
-              <View style={styles.logoCircle}>
-                <Text style={styles.logoText}>W</Text>
-              </View>
+        <AnimatedField
+          label="Phone Number"
+          placeholder="03XXXXXXXXX"
+          value={values.phone}
+          onChangeText={text => setValue('phone', text)}
+          icon={<PhoneIcon size={18} color={colors.primary} />}
+          keyboardType="phone-pad"
+          formatter={formatPhone}
+          maxLength={13}
+          error={errors.phone}
+        />
 
-              <Text style={styles.title}>Create Account</Text>
+        <AnimatedField
+          label="CNIC Number"
+          placeholder="00000-0000000-0"
+          value={values.cnic}
+          onChangeText={text => setValue('cnic', text)}
+          icon={<IdCardIcon size={18} color={colors.secondary} />}
+          keyboardType="number-pad"
+          formatter={formatCnic}
+          maxLength={13}
+          error={errors.cnic}
+          hint="Formatted automatically as 00000-0000000-0"
+        />
 
-              <Text style={styles.subtitle}>
-                Sign up to get started with our application
-              </Text>
-            </View>
+        <AnimatedField
+          label="Complete Address"
+          placeholder="House, street, sector, city"
+          value={values.address}
+          onChangeText={text => setValue('address', text)}
+          icon={<PinIcon size={18} color={colors.primary} />}
+          autoCapitalize="words"
+          error={errors.address}
+        />
 
-            {/* Full Name */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Full Name</Text>
+        <AnimatedField
+          label="Email Address"
+          placeholder="name@example.com"
+          value={values.email}
+          onChangeText={text => setValue('email', text)}
+          icon={<MailIcon size={18} color={colors.primary} />}
+          keyboardType="email-address"
+          autoComplete="email"
+          error={errors.email}
+        />
 
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your full name"
-                placeholderTextColor="#94A3B8"
-                value={fullName}
-                onChangeText={setFullName}
-                autoCapitalize="words"
-              />
-            </View>
+        <AnimatedField
+          label="Password"
+          placeholder="Min. 8 characters, letters + numbers"
+          value={values.password}
+          onChangeText={text => setValue('password', text)}
+          icon={<LockIcon size={18} color={colors.primary} />}
+          isPassword
+          error={errors.password}
+        />
 
-            {/* Email */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Email Address</Text>
+        <AnimatedField
+          label="Confirm Password"
+          placeholder="Re-enter your password"
+          value={values.confirmPassword}
+          onChangeText={text => setValue('confirmPassword', text)}
+          icon={<LockIcon size={18} color={colors.secondary} />}
+          isPassword
+          error={errors.confirmPassword}
+          returnKeyType="done"
+        />
 
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your email"
-                placeholderTextColor="#94A3B8"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
+        {notice ? (
+          <Notice tone={notice.tone} title={notice.title} message={notice.message} />
+        ) : null}
 
-            {/* Password */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Password</Text>
+        <PrimaryButton
+          label="Next"
+          icon={<ArrowRightIcon size={18} color={colors.white} />}
+          onPress={handleNext}
+          loading={loading}
+          disabled={loading}
+        />
 
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your password"
-                placeholderTextColor="#94A3B8"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
-            </View>
+        <Text style={styles.privacyNote}>
+          Your password and CNIC are validated on this device only. Nothing is
+          persisted or transmitted, because no backend is connected yet.
+        </Text>
 
-            {/* Confirm Password */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Confirm Password</Text>
-
-              <TextInput
-                style={styles.input}
-                placeholder="Confirm your password"
-                placeholderTextColor="#94A3B8"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-              />
-            </View>
-
-            {/* Sign Up Button */}
-            <TouchableOpacity
-              style={styles.signUpButton}
-              activeOpacity={0.8}
-              onPress={handleSignUp}>
-              <Text style={styles.signUpText}>
-                Create Account
-              </Text>
-            </TouchableOpacity>
-
-            {/* Login */}
-            <View style={styles.loginContainer}>
-              <Text style={styles.loginText}>
-                Already have an account?
-              </Text>
-
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={onLogin}>
-                <Text style={styles.loginLink}>
-                  {' '}Login
-                </Text>
-              </TouchableOpacity>
-            </View>
-
+        <AnimatedIn delay={380} distance={14}>
+          <View style={styles.loginRow}>
+            <Text style={styles.loginText}>Already registered?</Text>
+            <TextButton label=" Login" onPress={onLogin} />
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </AnimatedIn>
+      </AuthCard>
+    </AuthShell>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-
-  container: {
-    flex: 1,
-  },
-
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 30,
-    paddingHorizontal: 20,
-  },
-
-  card: {
-    width: width > 600 ? 500 : '100%',
-    maxWidth: 500,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: width > 600 ? 35 : 24,
-
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-
-    elevation: 6,
-  },
-
-  header: {
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-
-  logoCircle: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#2563EB',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 18,
-  },
-
-  logoText: {
-    color: '#FFFFFF',
-    fontSize: 30,
-    fontWeight: '800',
-  },
-
-  title: {
-    fontSize: width > 600 ? 32 : 28,
-    fontWeight: '800',
-    color: '#0F172A',
-    textAlign: 'center',
-  },
-
-  subtitle: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 21,
-  },
-
-  inputContainer: {
-    marginBottom: 18,
-  },
-
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 8,
-  },
-
-  input: {
-    width: '100%',
-    height: 54,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    color: '#0F172A',
-    backgroundColor: '#F8FAFC',
-  },
-
-  signUpButton: {
-    height: 55,
-    backgroundColor: '#2563EB',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-
-    shadowColor: '#2563EB',
-    shadowOffset: {
-      width: 0,
-      height: 5,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-
-    elevation: 4,
-  },
-
-  signUpText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
-  loginContainer: {
+  loginRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: spacing.xl,
   },
-
   loginText: {
+    ...font.caption,
     fontSize: 14,
-    color: '#64748B',
   },
-
-  loginLink: {
-    fontSize: 14,
-    color: '#2563EB',
-    fontWeight: '700',
+  privacyNote: {
+    fontSize: 11.5,
+    lineHeight: 17,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.md,
   },
 });
 
 export default SignUp;
-

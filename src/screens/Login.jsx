@@ -1,284 +1,195 @@
-
-import React, {useState} from 'react';
+import React, { useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import AuthShell, { AuthCard, Divider, ScreenHeader } from '../components/AuthShell';
+import { AnimatedField, Checkbox } from '../components/Field';
+import { PrimaryButton, SocialButton, TextButton } from '../components/Buttons';
+import { AnimatedIn } from '../components/Motion';
+import { Notice } from '../components/Feedback';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  Dimensions,
-  Alert,
-} from 'react-native';
+  AppleIcon,
+  GoogleIcon,
+  LockIcon,
+  MailIcon,
+} from '../components/Icons';
+import {
+  validateEmail,
+  validatePassword,
+  firstErrorMessage,
+} from '../utils/validation';
+import { colors, font, spacing } from '../theme/theme';
 
-const {width} = Dimensions.get('window');
+/**
+ * No authentication provider (Firebase, Auth API, …) is configured in this
+ * project, so a validated form is reported as "ready to submit" instead of a
+ * fake successful login.
+ */
+const AUTH_PENDING_MESSAGE =
+  'Your details passed validation. NexaLiving has no authentication provider configured yet, so no account was accessed and nothing was sent to a server.';
 
-const LoginScreen = () => {
+const LoginScreen = ({ onSignUp, onForgot }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [notice, setNotice] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = ({onSignUp}) => {
-    if (!email || !password) {
-      Alert.alert('Missing Fields', 'Please enter your email and password.');
+  const clearError = field => {
+    setNotice(null);
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: undefined }));
+    }
+  };
+
+  const handleLogin = () => {
+    const nextErrors = {
+      email: validateEmail(email),
+      password: validatePassword(password),
+    };
+    setErrors(nextErrors);
+
+    const firstError = firstErrorMessage(nextErrors);
+    if (firstError) {
+      setNotice({ tone: 'error', title: 'Please review your details', message: firstError });
       return;
     }
 
-    Alert.alert('Success', 'Login successful!');
+    setLoading(true);
+    setNotice(null);
+    // Front-end validation only — there is no auth backend to call yet.
+    setTimeout(() => {
+      setLoading(false);
+      setNotice({ tone: 'warning', title: 'Authentication setup pending', message: AUTH_PENDING_MESSAGE });
+    }, 900);
+  };
+
+  const handleSocial = provider => {
+    setNotice({
+      tone: 'info',
+      title: `${provider} sign-in unavailable`,
+      message: `Google and Apple authentication require a configured provider. No ${provider} SDK is installed in this project yet.`,
+    });
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <AuthShell
+      header={
+        <ScreenHeader
+          title="Welcome Back!"
+          subtitle="Sign in to continue your NexaLiving experience."
+          delay={80}
+        />
+      }>
+        <AuthCard delay={200}>
+          <AnimatedField
+            label="Email Address"
+            placeholder="name@example.com"
+            value={email}
+            onChangeText={text => {
+              setEmail(text);
+              clearError('email');
+            }}
+            icon={<MailIcon size={18} color={colors.primary} />}
+            keyboardType="email-address"
+            error={errors.email}
+            returnKeyType="next"
+          />
 
-        <ScrollView
-          contentContainerStyle={styles.scrollContainer}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
+          <AnimatedField
+            label="Password"
+            placeholder="Enter your password"
+            value={password}
+            onChangeText={text => {
+              setPassword(text);
+              clearError('password');
+            }}
+            icon={<LockIcon size={18} color={colors.primary} />}
+            isPassword
+            error={errors.password}
+            returnKeyType="done"
+          />
 
-          <View style={styles.card}>
-
-            {/* Logo & Header */}
-            <View style={styles.header}>
-
-              <View style={styles.logoCircle}>
-                <Text style={styles.logoText}>W</Text>
-              </View>
-
-              <Text style={styles.title}>Welcome Back</Text>
-
-              <Text style={styles.subtitle}>
-                Login to your account to continue
-              </Text>
-
-            </View>
-
-            {/* Email */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Email Address</Text>
-
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your email"
-                placeholderTextColor="#94A3B8"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-
-            {/* Password */}
-            <View style={styles.inputContainer}>
-              <View style={styles.passwordHeader}>
-                <Text style={styles.label}>Password</Text>
-
-                <TouchableOpacity>
-                  <Text style={styles.forgotPassword}>
-                    Forgot Password?
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your password"
-                placeholderTextColor="#94A3B8"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
-            </View>
-
-            {/* Login Button */}
-            <TouchableOpacity
-              style={styles.loginButton}
-              activeOpacity={0.8}
-              onPress={handleLogin}>
-
-              <Text style={styles.loginButtonText}>
-                Login
-              </Text>
-
-            </TouchableOpacity>
-
-            {/* Signup */}
-            <View style={styles.signupContainer}>
-
-              <Text style={styles.signupText}>
-                Don't have an account?
-              </Text>
-
-              <TouchableOpacity>
-                <Text style={styles.signupLink}>
-                  {' '}Sign Up
-                </Text>
-              </TouchableOpacity>
-
-            </View>
-
+          <View style={styles.optionsRow}>
+            <Checkbox checked={remember} onChange={setRemember} label="Remember me" />
+            <TextButton label="Forgot Password?" onPress={() => onForgot && onForgot(email)} color={colors.secondary} />
           </View>
 
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          {notice ? (
+            <Notice
+              tone={notice.tone}
+              title={notice.title}
+              message={notice.message}
+              visible={Boolean(notice)}
+            />
+          ) : null}
+
+          <PrimaryButton
+            label="Login"
+            onPress={handleLogin}
+            loading={loading}
+            disabled={loading}
+            style={styles.submit}
+          />
+
+          <Divider label="or continue with" />
+
+          <View style={styles.socialRow}>
+            <SocialButton
+              label="Google"
+              icon={<GoogleIcon size={20} />}
+              onPress={() => handleSocial('Google')}
+              disabled={loading}
+            />
+            <SocialButton
+              label="Apple"
+              icon={<AppleIcon size={20} />}
+              onPress={() => handleSocial('Apple')}
+              disabled={loading}
+            />
+          </View>
+
+          <AnimatedIn delay={420} distance={14}>
+            <View style={styles.signupRow}>
+              <Text style={styles.signupText}>Don&apos;t have an account?</Text>
+              <TextButton label=" Sign Up" onPress={onSignUp} />
+            </View>
+          </AnimatedIn>
+        </AuthCard>
+
+        <Text style={styles.footer}>NexaLiving · Secure community living</Text>
+    </AuthShell>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-
-  container: {
-    flex: 1,
-  },
-
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 30,
-    paddingHorizontal: 20,
-  },
-
-  card: {
-    width: width > 600 ? 500 : '100%',
-    maxWidth: 500,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: width > 600 ? 35 : 24,
-
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-
-    elevation: 6,
-  },
-
-  header: {
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-
-  logoCircle: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#2563EB',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 18,
-  },
-
-  logoText: {
-    color: '#FFFFFF',
-    fontSize: 30,
-    fontWeight: '800',
-  },
-
-  title: {
-    fontSize: width > 600 ? 32 : 28,
-    fontWeight: '800',
-    color: '#0F172A',
-    textAlign: 'center',
-  },
-
-  subtitle: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 21,
-  },
-
-  inputContainer: {
-    marginBottom: 18,
-  },
-
-  passwordHeader: {
+  optionsRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    marginTop: spacing.xs,
+    marginBottom: spacing.lg,
   },
-
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 8,
+  submit: {
+    marginTop: spacing.xs,
   },
-
-  input: {
-    width: '100%',
-    height: 54,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    color: '#0F172A',
-    backgroundColor: '#F8FAFC',
+  socialRow: {
+    flexDirection: 'row',
   },
-
-  forgotPassword: {
-    fontSize: 13,
-    color: '#2563EB',
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-
-  loginButton: {
-    height: 55,
-    backgroundColor: '#2563EB',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-
-    shadowColor: '#2563EB',
-    shadowOffset: {
-      width: 0,
-      height: 5,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-
-    elevation: 4,
-  },
-
-  loginButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
-  signupContainer: {
+  signupRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: spacing.xl,
   },
-
   signupText: {
+    ...font.caption,
     fontSize: 14,
-    color: '#64748B',
   },
-
-  signupLink: {
-    fontSize: 14,
-    color: '#2563EB',
-    fontWeight: '700',
+  footer: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.xl,
   },
 });
 
