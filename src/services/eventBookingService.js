@@ -1,4 +1,5 @@
 import {API_BASE_URL} from './authService';
+import {getMongoBookingId} from '../features/event-space-booking/eventBookingLogic';
 
 const TIMEOUT_MS = 15000;
 
@@ -79,6 +80,8 @@ function normalizeVenue(venue) {
     hours:
       venue.hours ||
       `${venue.openingTime || ''} – ${venue.closingTime || ''}`,
+    openingTime: venue.openingTime || '',
+    closingTime: venue.closingTime || '',
     price:
       venue.price ||
       `${venue.currency || 'PKR'} ${venue.hourlyRate || 0}/hour`,
@@ -107,18 +110,10 @@ function normalizeBooking(booking) {
   }
 
   return {
-    id: String(
-      booking.bookingCode ||
-      booking._id ||
-      booking.id ||
-      '',
-    ),
-
-    bookingId: String(
-      booking._id ||
-      booking.bookingId ||
-      '',
-    ),
+    // Keep database identity separate from the user-facing booking code.
+    id: String(getMongoBookingId(booking)),
+    bookingCode: String(booking.bookingCode || ''),
+    bookingId: String(getMongoBookingId(booking)),
 
     venueId: String(
       venue?._id ||
@@ -169,6 +164,10 @@ export const eventBookingApi = {
     const data = await request('/events/bookings/my', {token});
 
     return (data.bookings || []).map(normalizeBooking);
+  },
+
+  async getAdminAccess(token) {
+    return request('/events/admin/access', {token});
   },
 
   async createBooking(payload, token) {

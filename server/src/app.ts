@@ -1,6 +1,7 @@
 import express, {NextFunction, Request, Response} from 'express';
 import cors from 'cors';
 import authRoutes from './routes/auth.routes';
+import eventRoutes from './routes/event.routes';
 
 const app = express();
 
@@ -9,6 +10,7 @@ app.use(express.json());
 
 app.get('/health', (_req, res) => res.json({status: 'ok'}));
 app.use('/api/auth', authRoutes);
+app.use('/api/events', eventRoutes);
 
 // 404
 app.use((_req, res) => {

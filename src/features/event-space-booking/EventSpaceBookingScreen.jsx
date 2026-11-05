@@ -1,4 +1,5 @@
 import React, {
+  useCallback,
   useState,
   useMemo,
   useRef,
@@ -8,6 +9,17 @@ import React, {
 import {eventBookingApi} from '../../services/eventBookingService';
 import EventBookingAdminPanel from './EventBookingAdminPanel';
 import {
+  blocksAvailability,
+  getRequestForToken,
+  isOnOrAfterLocalDate,
+  isValidDateOnly,
+  isValidClockTime,
+  isValidGuestCount,
+  isWithinVenueHours,
+  overlaps,
+  toMinutes,
+} from './eventBookingLogic';
+import {
   View,
   Text,
   StyleSheet,
@@ -15,21 +27,15 @@ import {
   Image,
   TouchableOpacity,
   TextInput,
-  FlatList,
-  Dimensions,
   Animated,
   KeyboardAvoidingView,
   Platform,
-  Keyboard,
   TouchableWithoutFeedback,
   Modal,
   SafeAreaView,
   ActivityIndicator,
-  I18nManager,
   Alert,
 } from 'react-native';
-
-const { width, height } = Dimensions.get('window');
 
 /* ---------------------------------------------------------------- */
 /*  Theme                                                           */
@@ -97,20 +103,6 @@ const toISODate = (d) => {
 };
 
 const isSameDay = (a, b) => toISODate(a) === toISODate(b);
-
-const addDays = (d, n) => {
-  const date = new Date(d);
-  date.setDate(date.getDate() + n);
-  return date;
-};
-
-const overlaps = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && bStart < aEnd;
-
-const toMinutes = (t) => {
-  // t like "13:30"
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
-};
 
 const fmtTime12 = (t) => {
   if (!t) return '';
@@ -309,12 +301,12 @@ const TopBar = ({ title, onBack, right, large }) => (
 /* ---------------------------------------------------------------- */
 /*  Bottom navigation                                               */
 /* ---------------------------------------------------------------- */
-const TabBar = ({ active, onChange, bookingsCount }) => {
+const TabBar = ({ active, onChange, bookingsCount, showAdmin }) => {
   const tabs = [
     { id: 'explore', label: 'Explore', icon: 'compass' },
     { id: 'bookings', label: 'My Bookings', icon: 'bookmark' },
-    { id: 'admin', label: 'Admin', icon: 'list' },
   ];
+  if (showAdmin) tabs.push({id: 'admin', label: 'Admin', icon: 'users'});
   return (
     <View style={styles.tabBar}>
       <View style={styles.tabBarInner}>
@@ -414,7 +406,7 @@ const VenueCard = ({ venue, onPress }) => (
 /* ---------------------------------------------------------------- */
 /*  VIEW 1 — Explore Spaces                                          */
 /* ---------------------------------------------------------------- */
-const ExploreView = ({venues, onOpenVenue, onGoBookings}) => {
+const ExploreView = ({venues, onOpenVenue, onGoBookings, loading, error, onRetry}) => {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
  
@@ -498,7 +490,19 @@ const ExploreView = ({venues, onOpenVenue, onGoBookings}) => {
             }
           />
 
-          {filtered.length === 0 ? (
+          {loading ? (
+            <View style={styles.emptyExplore}>
+              <ActivityIndicator color={COLOR.royal} />
+              <Text style={styles.emptyExploreSub}>Loading available spaces…</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.emptyExplore}>
+              <Text style={styles.emptyExploreSub}>{error}</Text>
+              <TouchableOpacity onPress={onRetry} style={styles.seeAllBtn}>
+                <Text style={styles.seeAllText}>Try again</Text>
+              </TouchableOpacity>
+            </View>
+          ) : filtered.length === 0 ? (
             <View style={styles.emptyExplore}>
               <Icon name="search" size={40} color={COLOR.border} />
               <Text style={styles.emptyExploreTitle}>No spaces found</Text>
@@ -819,30 +823,43 @@ const BookView = ({ venue, onBack, onSubmitted, onGoBookings }) => {
 
   const validate = () => {
     const e = {};
-    if (!date) e.date = 'Please choose a date.';
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+      e.date = 'Please choose a valid date.';
+    } else {
+      const selectedDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (selectedDay < today) e.date = 'Choose today or a future date.';
+    }
     if (!start) e.start = 'Set a start time.';
+    else if (!isValidClockTime(start)) e.start = 'Choose a valid start time.';
     if (!end) e.end = 'Set an end time.';
-    if (start && end && toMinutes(end) <= toMinutes(start)) e.end = 'End time must be after start time.';
-    if (guests < 1) e.guests = 'At least 1 guest.';
-    if (guests > venue.capacity) e.guests = `Max capacity is ${venue.capacity}.`;
+    else if (!isValidClockTime(end)) e.end = 'Choose a valid end time.';
+    if (start && end && (!isValidClockTime(start) || !isValidClockTime(end))) {
+      e.end = 'Choose a valid start and end time.';
+    } else if (start && end && toMinutes(end) <= toMinutes(start)) e.end = 'End time must be after start time.';
+    if (start && end && (!isValidClockTime(venue.openingTime) || !isValidClockTime(venue.closingTime))) {
+      e.start = 'Venue hours are unavailable. Refresh the venue list and try again.';
+    } else if (start && end) {
+      if (toMinutes(start) < toMinutes(venue.openingTime)) {
+        e.start = `Start time must be at or after ${fmtTime12(venue.openingTime)}.`;
+      }
+      if (toMinutes(end) > toMinutes(venue.closingTime)) {
+        e.end = `End time must be at or before ${fmtTime12(venue.closingTime)}.`;
+      }
+    }
+    if (!Number.isInteger(Number(guests)) || Number(guests) < 1) e.guests = 'Enter a whole number of at least 1 guest.';
+    else if (!Number.isInteger(Number(venue.capacity)) || Number(venue.capacity) < 1) e.guests = 'Venue capacity is unavailable. Refresh the venue list and try again.';
+    else if (!isValidGuestCount(guests, venue.capacity)) e.guests = `Max capacity is ${venue.capacity}.`;
     if (!purpose.trim()) e.purpose = 'Tell us the purpose of your event.';
     setErrors(e);
     return Object.keys(e).length === 0;
-  };
-
-  const checkConflict = (all) => {
-    return all.find((b) => {
-      if (b.venueId !== venue.id) return false;
-      if (toISODate(b.date) !== toISODate(date)) return false;
-      return overlaps(toMinutes(start), toMinutes(end), toMinutes(b.start), toMinutes(b.end));
-    });
   };
 
   const submit = async () => {
   if (!validate()) return;
 
   const booking = {
-    id: 'BK' + Date.now().toString().slice(-7),
     venueId: venue.id,
     venueName: venue.name,
     venueImage: venue.image,
@@ -908,7 +925,7 @@ const BookView = ({ venue, onBack, onSubmitted, onGoBookings }) => {
             <View style={styles.successCard}>
               <View style={styles.successCardRow}>
                 <Text style={styles.successCardLabel}>Booking ID</Text>
-                <Text style={styles.successCardValue}>{success.id}</Text>
+                <Text style={styles.successCardValue}>{success.bookingCode || success.id}</Text>
               </View>
               <View style={styles.successDivider} />
               <View style={styles.successCardRow}>
@@ -1206,7 +1223,7 @@ const BookingsView = ({bookings, venues, loading, error, onRetry, onOpenVenue, o
                     <Image source={{ uri: b.venueImage }} style={styles.bookingThumb} resizeMode="cover" />
                     <View style={styles.bookingCardInfo}>
                       <Text style={styles.bookingVenueName} numberOfLines={1}>{b.venueName}</Text>
-                      <Text style={styles.bookingId}>{b.id}</Text>
+                      <Text style={styles.bookingId}>{b.bookingCode || b.id}</Text>
                       <View style={styles.bookingMetaRow}>
                         <Icon name="calendar" size={12} color={COLOR.sub} />
                         <Text style={styles.bookingMetaText}>{formatDate(b.dateObj || b.date)}</Text>
@@ -1257,6 +1274,8 @@ const BookingsView = ({bookings, venues, loading, error, onRetry, onOpenVenue, o
 /* ---------------------------------------------------------------- */
 export default function EventSpaceBookingScreen({token = null}) {
   const [tab, setTab] = useState('explore');
+  const [adminAccess, setAdminAccess] = useState({token: null, authorized: false});
+  const eventAdminAuthorized = adminAccess.token === token && adminAccess.authorized;
   const [stack, setStack] = useState([]);
 
   const [venues, setVenues] = useState([]);
@@ -1274,42 +1293,141 @@ export default function EventSpaceBookingScreen({token = null}) {
   const openVenue = venue => push({type: 'details', venue});
   const openBook = venue => push({type: 'book', venue});
 
-  const loadData = async () => {
+  const venueRequestRef = useRef(null);
+  const bookingsRequestRef = useRef(null);
+  const bookingsLoadedRef = useRef(false);
+  const activeTokenRef = useRef(token);
+  const adminAccessRequestRef = useRef(null);
+
+  const refreshBookings = useCallback(async (force = false) => {
+    if (!token) {
+      setBookings([]);
+      setBookingsError('Authentication is required to view your bookings.');
+      bookingsLoadedRef.current = false;
+      return;
+    }
+    const currentRequest = getRequestForToken(bookingsRequestRef.current, token);
+    if (currentRequest) {
+      await currentRequest.promise;
+      if (!force) return;
+    }
+    if (bookingsLoadedRef.current && !force) return;
+
+    setBookingsLoading(true);
+    setBookingsError('');
+    const request = {token, promise: null};
+    request.promise = (async () => {
+      try {
+        const residentBookings = await eventBookingApi.getMyBookings(token);
+        if (activeTokenRef.current === token && bookingsRequestRef.current === request) {
+          setBookings(residentBookings);
+          bookingsLoadedRef.current = true;
+        }
+      } catch (error) {
+        if (activeTokenRef.current === token && bookingsRequestRef.current === request) {
+          setBookingsError(error.message || 'Unable to refresh bookings.');
+        }
+      } finally {
+        if (bookingsRequestRef.current === request) {
+          bookingsRequestRef.current = null;
+          if (activeTokenRef.current === token) setBookingsLoading(false);
+        }
+      }
+    })();
+    bookingsRequestRef.current = request;
+    return request.promise;
+  }, [token]);
+
+  const loadData = useCallback(async () => {
+    if (activeTokenRef.current !== token) {
+      activeTokenRef.current = token;
+      bookingsLoadedRef.current = false;
+      setBookings([]);
+      setVenues([]);
+      setBookingsError('');
+      setLoadError('');
+      setTab('explore');
+      resetStack();
+    }
+    const currentVenueRequest = getRequestForToken(venueRequestRef.current, token);
+    if (currentVenueRequest) return currentVenueRequest.promise;
     if (!token) {
       setVenues([]);
       setBookings([]);
       setLoadError('Authentication is required to view event spaces and bookings.');
+      setBookingsError('Authentication is required to view your bookings.');
+      bookingsLoadedRef.current = false;
       return;
     }
-    try {
-      setLoading(true);
-      setLoadError('');
-      const venueData = await eventBookingApi.getVenues(token);
-      setVenues(venueData);
-    } catch (error) {
-      setLoadError(error.message || 'Unable to load event spaces.');
-    } finally {
-      setLoading(false);
-    }
+    const request = {token, promise: null};
+    request.promise = (async () => {
+      try {
+        setLoading(true);
+        setLoadError('');
+        const [venueData] = await Promise.all([
+          eventBookingApi.getVenues(token),
+          refreshBookings(),
+        ]);
+        if (activeTokenRef.current === token && venueRequestRef.current === request) {
+          setVenues(venueData);
+        }
+      } catch (error) {
+        if (activeTokenRef.current === token && venueRequestRef.current === request) {
+          setLoadError(error.message || 'Unable to load event spaces.');
+        }
+      } finally {
+        if (venueRequestRef.current === request) {
+          venueRequestRef.current = null;
+          if (activeTokenRef.current === token) setLoading(false);
+        }
+      }
+    })();
+    venueRequestRef.current = request;
+    return request.promise;
+  }, [token, refreshBookings]);
+
+  const showExplore = () => {
+    if (tab !== 'explore') loadData();
+    setTab('explore');
+    resetStack();
   };
 
-  const refreshBookings = async () => {
-    if (!token) return;
-    setBookingsLoading(true);
-    setBookingsError('');
-    try {
-      setBookings(await eventBookingApi.getMyBookings(token));
-    } catch (error) {
-      setBookingsError(error.message || 'Unable to refresh bookings.');
-    } finally {
-      setBookingsLoading(false);
+  useEffect(() => {
+    let active = true;
+    activeTokenRef.current = token;
+    setAdminAccess({token, authorized: false});
+    setTab(current => current === 'admin' ? 'explore' : current);
+
+    if (!token) {
+      adminAccessRequestRef.current = null;
+      return () => { active = false; };
     }
-  };
+
+    let request = adminAccessRequestRef.current;
+    if (!request || request.token !== token) {
+      request = {
+        token,
+        promise: eventBookingApi.getAdminAccess(token)
+          .then(response => response?.isAdmin === true)
+          .catch(() => false),
+      };
+      adminAccessRequestRef.current = request;
+    }
+
+    request.promise.then(isAdmin => {
+      if (active && activeTokenRef.current === token) {
+        setAdminAccess({token, authorized: isAdmin});
+        if (!isAdmin) setTab(current => current === 'admin' ? 'explore' : current);
+      }
+    });
+
+    return () => { active = false; };
+  }, [token]);
 
   // Initial load and reload when authentication token changes.
   useEffect(() => {
     loadData();
-  }, [token]);
+  }, [loadData]);
 
   // Refresh resident bookings after returning from admin review.
   const openMyBookings = async () => {
@@ -1320,8 +1438,53 @@ export default function EventSpaceBookingScreen({token = null}) {
 
   const handleSubmit = async booking => {
     if (!token) throw new Error('Authentication is required to submit a booking.');
+
+    if (!isValidDateOnly(booking.date) || !isOnOrAfterLocalDate(booking.date)) {
+      throw new Error('Choose a valid date that is today or in the future.');
+    }
+
+    const venue = venues.find(item => String(item.id) === String(booking.venueId));
+    if (!venue || !isValidGuestCount(booking.guests, venue.capacity)) {
+      throw new Error('The guest count or venue capacity is invalid. Refresh the venue list and try again.');
+    }
+    if (!isWithinVenueHours(booking.start, booking.end, venue.openingTime, venue.closingTime)) {
+      throw new Error('The selected time is outside the venue hours. Refresh the venue list and try again.');
+    }
+
+    const availability = await eventBookingApi.checkAvailability(booking.venueId, booking.date, token);
+    if (!Array.isArray(availability.blockedSlots)) {
+      throw new Error('Could not confirm venue availability. Please try again.');
+    }
+    if (String(availability.venueId || '') !== String(booking.venueId) ||
+        availability.date !== booking.date) {
+      throw new Error('Availability response did not match this venue and date. Please try again.');
+    }
+    if (!isWithinVenueHours(booking.start, booking.end, availability.openingTime, availability.closingTime)) {
+      throw new Error('The selected time is outside the venue hours. Refresh the venue list and try again.');
+    }
+    const requestedStart = toMinutes(booking.start);
+    const requestedEnd = toMinutes(booking.end);
+    const conflict = availability.blockedSlots.find(slot => {
+      if (!slot || typeof slot !== 'object') {
+        throw new Error('Availability data was incomplete. Please try again.');
+      }
+      const status = String(slot.status || '').toLowerCase();
+      if (!['pending', 'approved', 'rejected', 'cancelled'].includes(status)) {
+        throw new Error('Availability data was incomplete. Please try again.');
+      }
+      if (!blocksAvailability(slot)) return false;
+      if (!isValidClockTime(slot.start) || !isValidClockTime(slot.end) || toMinutes(slot.end) <= toMinutes(slot.start)) {
+        throw new Error('Availability data was incomplete. Please try again.');
+      }
+      return overlaps(requestedStart, requestedEnd, toMinutes(slot.start), toMinutes(slot.end));
+    });
+    if (conflict) {
+      const error = new Error('That time slot is unavailable. Choose a different time.');
+      error.status = 409;
+      throw error;
+    }
     const saved = await eventBookingApi.createBooking(booking, token);
-    await refreshBookings();
+    await refreshBookings(true);
     return saved;
   };
 
@@ -1334,11 +1497,14 @@ export default function EventSpaceBookingScreen({token = null}) {
   if (stack.length === 0) {
     showTopBar = false;
 
-    content = tab === 'admin' ? (
-        <EventBookingAdminPanel token={token} onBack={() => setTab('explore')} />
-      ) : tab === 'explore' ? (
+    content = tab === 'admin' && eventAdminAuthorized ? (
+        <EventBookingAdminPanel token={token} onBack={showExplore} />
+      ) : tab === 'explore' || tab === 'admin' ? (
         <ExploreView
           venues={venues}
+          loading={loading}
+          error={loadError}
+          onRetry={loadData}
           onOpenVenue={openVenue}
           onGoBookings={openMyBookings}
         />
@@ -1347,10 +1513,10 @@ export default function EventSpaceBookingScreen({token = null}) {
           bookings={bookings}
           loading={bookingsLoading}
           error={bookingsError}
-          onRetry={refreshBookings}
+          onRetry={() => refreshBookings(true)}
           venues={venues}
           onOpenVenue={openVenue}
-          onNewBooking={() => setTab('explore')}
+          onNewBooking={showExplore}
         />
       );
   } else {
@@ -1419,15 +1585,15 @@ export default function EventSpaceBookingScreen({token = null}) {
           onChange={nextTab => {
             if (nextTab === 'bookings') {
               openMyBookings();
-            } else if (nextTab === 'admin') {
+            } else if (nextTab === 'admin' && eventAdminAuthorized) {
               resetStack();
               setTab('admin');
             } else {
-              setTab('explore');
-              resetStack();
+              showExplore();
             }
           }}
           bookingsCount={bookings.length}
+          showAdmin={eventAdminAuthorized}
         />
       </View>
     </SafeAreaView>
