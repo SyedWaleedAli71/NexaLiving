@@ -7,6 +7,7 @@ export interface IUser {
   fullName: string;
   email: string;
   phone: string;
+  cnic: string;
   passwordHash: string;
   globalRole: 'user' | 'admin';
   avatar?: { url: string; publicId: string };
@@ -35,6 +36,7 @@ const UserSchema = new Schema<IUser>({
   fullName: { type: String, required: true, minlength: 2, maxlength: 60 },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
   phone: { type: String, required: true },
+  cnic: { type: String, required: true, unique: true, match: /^\d{5}-\d{7}-\d{1}$/ },
   passwordHash: { type: String, required: true, select: false },
   globalRole: { type: String, enum: GLOBAL_ROLES, default: 'user' },
   avatar: { type: ImageRefSchema },
@@ -70,6 +72,7 @@ export type UserModel = import('mongoose').Model<IUser, {}, IUserMethods>;
 UserSchema.method('toPublicJSON', function (this: any) {
   return {
     _id: this._id, fullName: this.fullName, email: this.email, phone: this.phone,
+    cnic: this.cnic,
     globalRole: this.globalRole, avatar: this.avatar, bio: this.bio, skills: this.skills,
     showInDirectory: this.showInDirectory, showPhoneInDirectory: this.showPhoneInDirectory,
     settings: this.settings, createdAt: this.createdAt,

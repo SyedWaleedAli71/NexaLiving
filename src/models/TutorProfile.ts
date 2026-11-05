@@ -6,6 +6,8 @@ const s = new Schema({
   headline: { type: String, required: true, minlength: 5, maxlength: 80 },
   bio: { type: String, maxlength: 1000 },
   qualifications: { type: String, maxlength: 300 },
+  phone: { type: String, required: true },
+  whatsapp: { type: String },
   subjects: [{ type: String, enum: TUTOR_SUBJECTS }],
   grades: [{ type: String, enum: TUTOR_GRADES }],
   teachingMode: [{ type: String, enum: TEACHING_MODES }],

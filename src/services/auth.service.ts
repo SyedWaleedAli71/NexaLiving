@@ -24,7 +24,7 @@ export async function register(input: any, ip?: string) {
   const passwordHash = await bcrypt.hash(input.password, 12);
   const user: any = await User.create({
     fullName: input.fullName, email, phone: normalizePkPhone(input.phone),
-    passwordHash, globalRole,
+    cnic: input.cnic, passwordHash, globalRole,
   });
   if (globalRole === 'admin') await audit({ actor: String(user._id), action: 'ADMIN_SIGNUP', ip });
   const tokens = await issueTokenPair(user, input.deviceName);

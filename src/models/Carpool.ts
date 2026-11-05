@@ -10,6 +10,7 @@ const s = new Schema({
   totalSeats: { type: Number, min: 1, max: 20 }, availableSeats: { type: Number, min: 0 },
   costPerSeat: { type: Number, default: 0 },
   vehicle: String, genderPreference: { type: String, enum: CARPOOL_GENDER_PREF, default: 'any' },
+  contactPhone: { type: String, required: true },
   notes: String,
   status: { type: String, enum: CARPOOL_STATUSES, default: 'active' },
   deletedAt: { type: Date, default: null },

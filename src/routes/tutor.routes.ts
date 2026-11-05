@@ -18,6 +18,7 @@ import { sendToUser } from '../services/notification.service';
 import { NOTIFICATION_TYPES } from '../constants/notificationTypes';
 import { audit } from '../services/audit.service';
 import { TUTOR_SUBJECTS, TUTOR_GRADES, TEACHING_MODES, FEE_UNITS, REQUEST_STATUSES } from '../constants/enums';
+import { PK_PHONE_RE } from '../utils/phone';
 
 const oid = z.string().regex(/^[0-9a-fA-F]{24}$/);
 const r = Router({ mergeParams: true });
@@ -27,6 +28,8 @@ const profileFields = z.object({
   headline: z.string().min(5).max(80),
   bio: z.string().max(1000),
   qualifications: z.string().max(300),
+  phone: z.string().regex(PK_PHONE_RE, 'Invalid Pakistani mobile number'),
+  whatsapp: z.string().regex(PK_PHONE_RE, 'Invalid Pakistani mobile number').optional().or(z.literal('')),
   subjects: z.array(z.enum(TUTOR_SUBJECTS)).min(1).max(10),
   grades: z.array(z.enum(TUTOR_GRADES)).min(1),
   teachingMode: z.array(z.enum(TEACHING_MODES)).min(1),

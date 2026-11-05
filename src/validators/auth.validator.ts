@@ -8,6 +8,7 @@ export const registerSchema = {
     fullName: z.string().trim().min(2).max(60),
     email: z.string().trim().toLowerCase().email(),
     phone: z.string().regex(PK_PHONE_RE, 'Invalid Pakistani mobile number'),
+    cnic: z.string().regex(/^\d{5}-\d{7}-\d{1}$/, 'Invalid CNIC format (expected: XXXXX-XXXXXXX-X)'),
     password: passwordSchema,
     adminCode: z.string().max(80).optional().or(z.literal('')),
     deviceName: z.string().max(60).optional(),

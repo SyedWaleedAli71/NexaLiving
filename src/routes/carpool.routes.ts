@@ -18,6 +18,7 @@ const oid = z.string().regex(/^[0-9a-fA-F]{24}$/);
 import { Carpool } from '../models/Carpool';
 import { CarpoolRequest } from '../models/CarpoolRequest';
 import { REQUEST_STATUSES } from '../constants/enums';
+import { PK_PHONE_RE } from '../utils/phone';
 
 const r = Router({ mergeParams: true });
 r.use(authenticate, requireMember);
@@ -28,6 +29,7 @@ const body = z.object({
   schedule: z.object({ type: z.enum(['once','recurring']), date: z.coerce.date().optional(), days: z.array(z.number().int().min(0).max(6)).optional() }),
   totalSeats: z.number().int().min(1).max(20), costPerSeat: z.number().int().optional(),
   vehicle: z.string().max(80).optional(), genderPreference: z.enum(['any','male','female']).default('any'),
+  contactPhone: z.string().regex(PK_PHONE_RE, 'Invalid Pakistani mobile number'),
   notes: z.string().max(500).optional(),
 }).strip();
 
