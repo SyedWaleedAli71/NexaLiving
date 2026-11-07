@@ -1,112 +1,91 @@
-import mongoose, {Schema, Model} from 'mongoose';
-import bcrypt from 'bcryptjs';
-
-export type OtpField = 'verify' | 'reset';
+import { Schema, model, Types } from 'mongoose';
+import { GLOBAL_ROLES, THEMES, PLATFORMS } from '../constants/enums';
+import { ImageRefSchema } from './imageRef';
 
 export interface IUser {
+  _id: Types.ObjectId;
   fullName: string;
   email: string;
-  password: string;
+  phone: string;
+  cnic: string;
   isVerified: boolean;
-  verificationCode: string | null;
-  verificationCodeExpires: Date | null;
-  resetCode: string | null;
-  resetCodeExpires: Date | null;
+  verifyOtpHash?: string;
+  verifyOtpExpiresAt?: Date;
+  verifyOtpAttempts: number;
+  passwordHash: string;
+  globalRole: 'user' | 'admin';
+  avatar?: { url: string; publicId: string };
+  bio?: string;
+  skills: string[];
+  showInDirectory: boolean;
+  showPhoneInDirectory: boolean;
+  settings: {
+    theme: 'light' | 'dark' | 'system';
+    notifications: { announcements: boolean; bookings: boolean; requests: boolean; listings: boolean; community: boolean; marketing: boolean };
+  };
+  pushTokens: Array<{ token: string; platform: 'android' | 'ios'; addedAt: Date }>;
+  tokenVersion: number;
+  resetOtpHash?: string;
+  resetOtpExpiresAt?: Date;
+  resetOtpAttempts: number;
+  isBlocked: boolean;
+  lastLoginAt?: Date;
+  passwordChangedAt?: Date;
+  deletedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export interface IUserMethods {
-  comparePassword(candidate: string): Promise<boolean>;
-  generateOtp(field: OtpField, ttlMinutes: number): Promise<string>;
-  compareOtp(field: OtpField, candidate: string): Promise<boolean>;
-  clearOtp(field: OtpField): void;
-}
-
-type UserModel = Model<IUser, {}, IUserMethods>;
-
-const userSchema = new Schema<IUser, UserModel, IUserMethods>(
-  {
-    fullName: {
-      type: String,
-      required: [true, 'Full name is required'],
-      trim: true,
+const UserSchema = new Schema<IUser>({
+  fullName: { type: String, required: true, minlength: 2, maxlength: 60 },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
+  phone: { type: String, required: true },
+  cnic: { type: String, required: true, unique: true, match: /^\d{5}-\d{7}-\d{1}$/ },
+  isVerified: { type: Boolean, default: false },
+  verifyOtpHash: { type: String, select: false },
+  verifyOtpExpiresAt: { type: Date, select: false },
+  verifyOtpAttempts: { type: Number, default: 0, select: false },
+  passwordHash: { type: String, required: true, select: false },
+  globalRole: { type: String, enum: GLOBAL_ROLES, default: 'user' },
+  avatar: { type: ImageRefSchema },
+  bio: { type: String, maxlength: 300 },
+  skills: [{ type: String, maxlength: 30 }],
+  showInDirectory: { type: Boolean, default: true },
+  showPhoneInDirectory: { type: Boolean, default: false },
+  settings: {
+    theme: { type: String, enum: THEMES, default: 'system' },
+    notifications: {
+      announcements: { type: Boolean, default: true },
+      bookings: { type: Boolean, default: true },
+      requests: { type: Boolean, default: true },
+      listings: { type: Boolean, default: true },
+      community: { type: Boolean, default: true },
+      marketing: { type: Boolean, default: true },
     },
-    email: {
-      type: String,
-      required: [true, 'Email is required'],
-      unique: true,
-      lowercase: true,
-      trim: true,
-    },
-    password: {
-      type: String,
-      required: [true, 'Password is required'],
-      minlength: [8, 'Password must be at least 8 characters'],
-      select: false,
-    },
-    isVerified: {type: Boolean, default: false},
-    verificationCode: {type: String, select: false, default: null},
-    verificationCodeExpires: {type: Date, select: false, default: null},
-    resetCode: {type: String, select: false, default: null},
-    resetCodeExpires: {type: Date, select: false, default: null},
   },
-  {timestamps: true},
-);
+  pushTokens: [{ token: String, platform: { type: String, enum: PLATFORMS }, addedAt: Date, _id: false }],
+  tokenVersion: { type: Number, default: 0 },
+  resetOtpHash: { type: String, select: false },
+  resetOtpExpiresAt: { type: Date, select: false },
+  resetOtpAttempts: { type: Number, default: 0, select: false },
+  isBlocked: { type: Boolean, default: false },
+  lastLoginAt: Date,
+  passwordChangedAt: Date,
+  deletedAt: { type: Date, default: null },
+}, { timestamps: true });
 
-// Hash password whenever it is set/changed.
-userSchema.pre('save', async function () {
-  if (!this.isModified('password')) {
-    return;
-  }
-  this.password = await bcrypt.hash(this.password, 10);
+export interface IUserMethods { toPublicJSON(): any; }
+export type UserModel = import('mongoose').Model<IUser, {}, IUserMethods>;
+
+UserSchema.method('toPublicJSON', function (this: any) {
+  return {
+    _id: this._id, fullName: this.fullName, email: this.email, phone: this.phone,
+    cnic: this.cnic, isVerified: this.isVerified,
+    globalRole: this.globalRole, avatar: this.avatar, bio: this.bio, skills: this.skills,
+    showInDirectory: this.showInDirectory, showPhoneInDirectory: this.showPhoneInDirectory,
+    settings: this.settings, createdAt: this.createdAt,
+  };
 });
 
-userSchema.methods.comparePassword = function (candidate: string) {
-  return bcrypt.compare(candidate, this.password);
-};
-
-// Generate a 6-digit numeric OTP, store its hash + expiry, return the plain code.
-userSchema.methods.generateOtp = async function (
-  field: OtpField,
-  ttlMinutes: number,
-) {
-  const code = String(Math.floor(100000 + Math.random() * 900000));
-  const hashed = await bcrypt.hash(code, 8);
-  const expires = new Date(Date.now() + ttlMinutes * 60 * 1000);
-
-  if (field === 'reset') {
-    this.resetCode = hashed;
-    this.resetCodeExpires = expires;
-  } else {
-    this.verificationCode = hashed;
-    this.verificationCodeExpires = expires;
-  }
-
-  return code;
-};
-
-userSchema.methods.compareOtp = function (field: OtpField, candidate: string) {
-  const hash = field === 'reset' ? this.resetCode : this.verificationCode;
-  const expires =
-    field === 'reset' ? this.resetCodeExpires : this.verificationCodeExpires;
-
-  if (!hash || !expires || expires.getTime() < Date.now()) {
-    return Promise.resolve(false);
-  }
-  return bcrypt.compare(candidate, hash);
-};
-
-userSchema.methods.clearOtp = function (field: OtpField) {
-  if (field === 'reset') {
-    this.resetCode = null;
-    this.resetCodeExpires = null;
-  } else {
-    this.verificationCode = null;
-    this.verificationCodeExpires = null;
-  }
-};
-
-const User = mongoose.model<IUser, UserModel>('User', userSchema);
-
+export const User = model<IUser, UserModel>('User', UserSchema);
 export default User;

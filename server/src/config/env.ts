@@ -1,39 +1,34 @@
-import dotenv from 'dotenv';
+import { z } from 'zod';
 
+const schema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PORT: z.coerce.number().default(5000),
+  MONGODB_URI: z.string().min(1),
+  JWT_ACCESS_SECRET: z.string().min(32),
+  JWT_REFRESH_SECRET: z.string().min(32),
+  JWT_RESET_SECRET: z.string().min(32),
+  ASSISTANCE_ENC_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/),
+  IMAGEKIT_PRIVATE_KEY: z.string().min(1),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  MAIL_FROM: z.string().default('NexaLiving <no-reply@nexaliving.app>'),
+  EXPO_ACCESS_TOKEN: z.string().optional(),
+  DEFAULT_TIMEZONE: z.string().default('Asia/Karachi'),
+});
+
+import * as dotenv from 'dotenv';
 dotenv.config();
 
-export interface AppConfig {
-  port: number;
-  mongoURI: string;
-  jwtSecret: string;
-  jwtExpiresIn: string;
-  otpTtlMinutes: number;
-  clientBaseUrl: string;
-  smtp: {
-    host?: string;
-    port: number;
-    secure: boolean;
-    user?: string;
-    pass?: string;
-  };
-  mailFrom: string;
+const parsed = schema.safeParse(process.env);
+if (!parsed.success) {
+  // eslint-disable-next-line no-console
+  console.error('Invalid environment variables:', parsed.error.flatten().fieldErrors);
+  process.exit(1);
 }
 
-const config: AppConfig = {
-  port: Number(process.env.PORT) || 5000,
-  mongoURI: process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/nexaliving',
-  jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
-  otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES) || 10,
-  clientBaseUrl: process.env.CLIENT_BASE_URL || 'http://localhost:5000',
-  smtp: {
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === 'true',
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  mailFrom: process.env.MAIL_FROM || 'NexaLiving <no-reply@nexaliving.com>',
-};
-
-export default config;
+export const env = parsed.data;
+export const isProd = env.NODE_ENV === 'production';
+export const isTest = env.NODE_ENV === 'test';
+export const defaultTimezone = env.DEFAULT_TIMEZONE;

@@ -1,8 +1,12 @@
-# Environment secrets - never commit
+node_modules/
+dist/
 .env
 .env.local
 .env.*.local
-
-# Dependencies & build output
-node_modules/
-dist/
+coverage/
+logs/
+*.log
+.DS_Store
+.idea/
+.vscode/
+uploads/
